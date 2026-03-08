@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "medgama"
+version = "0.1.0"
+description = "MedGemma Medical Image Analysis Web Application"
+authors = ["Niteesh546"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = ">=0.104.0"
+uvicorn = {version = ">=0.24.0", extras = ["standard"]}
+python-multipart = ">=0.0.6"
+pillow = ">=10.0.0"
+transformers = ">=4.50.0"
+accelerate = ">=0.25.0"
+torch = ">=2.0.0"
+safetensors = ">=0.4.0"
+huggingface-hub = ">=0.20.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

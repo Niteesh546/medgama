@@ -1,0 +1,22 @@
+# Avoid copying these into the image
+venv
+.venv
+env
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov
+*.md
+!WEBAPP_README.md
+.env
+.env.*
+*.log
+.DS_Store
+.idea
+.vscode
+*.ipynb

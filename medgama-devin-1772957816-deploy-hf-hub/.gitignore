@@ -1,0 +1,27 @@
+# Python
+venv
+.venv
+env
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov
+
+# IDE / editor
+.vscode/
+.idea
+*.swp
+*.swo
+
+# Model weights (too large for GitHub; download from Hugging Face)
+*.safetensors
+
+# Temp / local
+tempCodeRunnerFile.py
+.env
+.env.*
+*.log
+.DS_Store
