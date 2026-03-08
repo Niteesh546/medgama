@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedGemma | Medical Image Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2332;
+            --accent: #22d3ee;
+            --accent-dim: #0891b2;
+            --accent-glow: rgba(34, 211, 238, 0.15);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #334155;
+            --success: #34d399;
+            --warning: #fbbf24;
+            --error: #f87171;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'DM Sans', system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Subtle grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: 
+                linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        header {
+            text-align: center;
+            padding: 3rem 0;
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow: 0 0 30px var(--accent-glow);
+        }
+
+        h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #fff 0%, var(--accent) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .tagline {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .disclaimer {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            margin: 2rem 0;
+            font-size: 0.9rem;
+            color: var(--warning);
+        }
+
+        .disclaimer strong { color: var(--warning); }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        @media (max-width: 900px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.75rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            border-color: rgba(34, 211, 238, 0.3);
+            box-shadow: 0 0 40px var(--accent-glow);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Upload zone */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 2.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.25s;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .upload-zone:hover,
+        .upload-zone.dragover {
+            border-color: var(--accent);
+            background: var(--accent-glow);
+        }
+
+        .upload-zone.has-image {
+            padding: 1rem;
+            min-height: 200px;
+        }
+
+        .upload-zone .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 0.75rem;
+            opacity: 0.7;
+        }
+
+        .upload-zone p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .upload-zone .formats {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .preview-container {
+            position: relative;
+            margin-top: 1rem;
+        }
+
+        .preview-container img {
+            max-width: 100%;
+            max-height: 280px;
+            border-radius: 8px;
+            object-fit: contain;
+            background: #000;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(248, 113, 113, 0.9);
+            color: white;
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .remove-btn:hover {
+            background: var(--error);
+        }
+
+        .options {
+            margin-top: 1rem;
+        }
+
+        .checkbox-wrap {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .checkbox-wrap input {
+            accent-color: var(--accent);
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .analyze-btn {
+            width: 100%;
+            margin-top: 1.25rem;
+            padding: 1rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            font-family: inherit;
+            background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .analyze-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px var(--accent-glow);
+        }
+
+        .analyze-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Results panel */
+        .results-card {
+            grid-column: 1 / -1;
+        }
+
+        .results-content {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+            line-height: 1.75;
+        }
+
+        .results-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .results-content::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+        }
+
+        .results-content::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        .results-content strong,
+        .results-content b {
+            color: var(--accent);
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-msg {
+            background: rgba(248, 113, 113, 0.15);
+            border: 1px solid rgba(248, 113, 113, 0.4);
+            color: var(--error);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.5;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem 0;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">◇</div>
+            </div>
+            <h1>MedGemma</h1>
+            <p class="tagline">AI-Powered Medical Image Analysis for Disease Detection & Treatment Suggestions</p>
+
+            <div class="disclaimer">
+                <strong>Disclaimer:</strong> This tool is for informational purposes only. MedGemma provides preliminary analysis based on medical images. Always consult a qualified healthcare professional for diagnosis, treatment, and medical advice. Do not rely on this tool for clinical decisions.
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <div class="card">
+                <div class="card-title">📤 Upload Medical Image</div>
+                <div class="upload-zone" id="uploadZone">
+                    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp,image/bmp">
+                    <div class="upload-icon">🩺</div>
+                    <p>Drag & drop your image here or click to browse</p>
+                    <p class="formats">Supports: Chest X-rays, dermatology, ophthalmology, pathology (JPEG, PNG, WebP, BMP)</p>
+                    <div class="preview-container" id="previewContainer" style="display: none;">
+                        <img id="previewImage" src="" alt="Preview">
+                        <button type="button" class="remove-btn" id="removeBtn" title="Remove image">×</button>
+                    </div>
+                </div>
+                <div class="options">
+                    <label class="checkbox-wrap">
+                        <input type="checkbox" id="includeCure" checked>
+                        Include disease detection & treatment suggestions
+                    </label>
+                </div>
+                <button class="analyze-btn" id="analyzeBtn" disabled>Analyze Image</button>
+            </div>
+
+            <div class="card results-card">
+                <div class="card-title">📋 Analysis Results</div>
+                <div id="resultsArea">
+                    <div class="empty-state" id="emptyState">
+                        <div class="icon">🔬</div>
+                        <p>Upload a medical image and click "Analyze Image" to get AI-powered disease detection and treatment suggestions.</p>
+                    </div>
+                    <div id="loadingState" class="loading" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Analyzing image... This may take 30–60 seconds.</p>
+                    </div>
+                    <div id="resultsContent" class="results-content" style="display: none;"></div>
+                    <div id="errorArea" class="error-msg" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            Powered by <a href="https://developers.google.com/health-ai-developer-foundations/medgemma" target="_blank" rel="noopener">MedGemma 1.5</a> • Medical imaging AI by Google
+        </footer>
+    </div>
+
+    <script>
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const removeBtn = document.getElementById('removeBtn');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const includeCure = document.getElementById('includeCure');
+        const emptyState = document.getElementById('emptyState');
+        const loadingState = document.getElementById('loadingState');
+        const resultsContent = document.getElementById('resultsContent');
+        const errorArea = document.getElementById('errorArea');
+
+        let selectedFile = null;
+
+        function showEmpty() {
+            emptyState.style.display = 'block';
+            loadingState.style.display = 'none';
+            resultsContent.style.display = 'none';
+            errorArea.style.display = 'none';
+        }
+
+        function showLoading() {
+            emptyState.style.display = 'none';
+            loadingState.style.display = 'flex';
+            resultsContent.style.display = 'none';
+            errorArea.style.display = 'none';
+        }
+
+        function showResults(text) {
+            emptyState.style.display = 'none';
+            loadingState.style.display = 'none';
+            resultsContent.style.display = 'block';
+            resultsContent.textContent = text;
+            errorArea.style.display = 'none';
+        }
+
+        function showError(msg) {
+            emptyState.style.display = 'none';
+            loadingState.style.display = 'none';
+            resultsContent.style.display = 'none';
+            errorArea.style.display = 'block';
+            errorArea.textContent = msg;
+        }
+
+        uploadZone.addEventListener('click', () => fileInput.click());
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) handleFile(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        function handleFile(file) {
+            selectedFile = file;
+            const url = URL.createObjectURL(file);
+            previewImage.src = url;
+            previewContainer.style.display = 'block';
+            uploadZone.classList.add('has-image');
+            uploadZone.querySelector('.upload-icon').style.display = 'none';
+            uploadZone.querySelector('p').style.display = 'none';
+            uploadZone.querySelector('.formats').style.display = 'none';
+            analyzeBtn.disabled = false;
+        }
+
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectedFile = null;
+            previewImage.src = '';
+            previewContainer.style.display = 'none';
+            uploadZone.classList.remove('has-image');
+            uploadZone.querySelector('.upload-icon').style.display = 'block';
+            uploadZone.querySelector('p').style.display = 'block';
+            uploadZone.querySelector('.formats').style.display = 'block';
+            fileInput.value = '';
+            analyzeBtn.disabled = true;
+            showEmpty();
+        });
+
+        analyzeBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            analyzeBtn.disabled = true;
+            showLoading();
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('include_cure', includeCure.checked);
+
+            try {
+                const res = await fetch('/api/analyze?include_cure=' + includeCure.checked, {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    emptyState.style.display = 'none';
+                    loadingState.style.display = 'none';
+                    resultsContent.style.display = 'block';
+                    resultsContent.innerHTML = formatAnalysisText(data.analysis);
+                    errorArea.style.display = 'none';
+                } else {
+                    showError(data.error || 'Analysis failed. Please try again.');
+                }
+            } catch (err) {
+                showError('Network error: ' + err.message);
+            } finally {
+                analyzeBtn.disabled = false;
+            }
+        });
+
+        function formatAnalysisText(text) {
+            const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+        }
+    </script>
+</body>
+</html>
