@@ -4,6 +4,7 @@ Analyzes medical images (X-rays, dermatology, etc.) for disease detection and tr
 """
 
 import io
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 
 # Model loading - lazy load to allow server to start
 pipe = None
+MODEL_ID = os.environ.get("MODEL_ID", "google/medgemma-1.5-4b-it")
+HF_TOKEN = os.environ.get("HF_TOKEN", None)
 MODEL_PATH = Path(__file__).parent
 
 ANALYSIS_PROMPT = """Analyze this medical image carefully. Please provide:
@@ -34,7 +37,7 @@ Remember: This is for informational purposes only. Always consult a qualified he
 
 
 def load_model():
-    """Load MedGemma model - supports both GPU and CPU."""
+    """Load MedGemma model - supports both GPU and CPU. Downloads from HF Hub if needed."""
     global pipe
     if pipe is not None:
         return pipe
@@ -47,12 +50,21 @@ def load_model():
         device = "cuda" if torch.cuda.is_available() else "cpu"
         torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
 
-        print(f"Loading MedGemma model from {MODEL_PATH} on {device}...")
+        # Try loading from local path first, fall back to HF Hub
+        local_safetensors = list(MODEL_PATH.glob("*.safetensors"))
+        if local_safetensors:
+            model_source = str(MODEL_PATH)
+            print(f"Loading MedGemma model from local path {MODEL_PATH} on {device}...")
+        else:
+            model_source = MODEL_ID
+            print(f"Loading MedGemma model from HF Hub ({MODEL_ID}) on {device}...")
+
         pipe = pipeline(
             "image-text-to-text",
-            model=str(MODEL_PATH),
+            model=model_source,
             torch_dtype=torch_dtype,
             device=device,
+            token=HF_TOKEN,
         )
         print("Model loaded successfully!")
         return pipe
