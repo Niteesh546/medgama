@@ -1,23 +1,25 @@
 # MedGemma Medical Image Analysis Web App
-# Image is large (~12GB+) because it includes the model. GPU recommended at runtime.
+# Optimized for Hugging Face Spaces free CPU tier
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system deps (optional, for some transformers deps)
+# Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies first (cached layer)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app and model (entire repo; model files are in same dir as app.py)
-COPY . .
+# Copy only app code (NOT model weights - they download at runtime via HF_TOKEN)
+COPY app.py .
+COPY static/ ./static/
 
-EXPOSE 8000
+EXPOSE 7860
 
-# Run the app (use --gpus all when running if you have NVIDIA GPU)
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# HF Spaces uses port 7860 by default
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860", "--timeout-keep-alive", "300"]

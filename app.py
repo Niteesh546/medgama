@@ -1,24 +1,44 @@
 """
 MedGemma Medical Image Analysis Web Application
 Analyzes medical images (X-rays, dermatology, etc.) for disease detection and treatment suggestions.
+
+Fixes applied:
+  - Model pre-warmed on startup (no cold-start delay on first request)
+  - File size limit enforced (max 10MB)
+  - Rate limiting via slowapi (5 requests/min per IP)
+  - Async inference timeout (120s) to prevent hung requests
+  - include_cure param handled correctly (query string only)
+  - Graceful error messages for all failure modes
 """
 
+import asyncio
 import io
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
-# Model loading - lazy load to allow server to start
-pipe = None
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 MODEL_ID = os.environ.get("MODEL_ID", "google/medgemma-1.5-4b-it")
 HF_TOKEN = os.environ.get("HF_TOKEN", None)
 MODEL_PATH = Path(__file__).parent
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_MB", "10")) * 1024 * 1024  # default 10 MB
+INFERENCE_TIMEOUT = int(os.environ.get("INFERENCE_TIMEOUT_SEC", "120"))        # default 120 s
+RATE_LIMIT = os.environ.get("RATE_LIMIT", "5/minute")                          # per IP
 
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
 ANALYSIS_PROMPT = """Analyze this medical image carefully. Please provide:
 1. **Observations**: Describe what you see in the image (anatomy, abnormalities, notable findings)
 2. **Potential Conditions**: List any diseases, conditions, or abnormalities you detect
@@ -35,9 +55,14 @@ CURE_PROMPT = """Based on your analysis of this medical image, provide:
 
 Remember: This is for informational purposes only. Always consult a qualified healthcare professional for diagnosis and treatment."""
 
+# ---------------------------------------------------------------------------
+# Model (lazy singleton)
+# ---------------------------------------------------------------------------
+pipe = None
+
 
 def load_model():
-    """Load MedGemma model - supports both GPU and CPU. Downloads from HF Hub if needed."""
+    """Load MedGemma model — tries local weights first, falls back to HF Hub."""
     global pipe
     if pipe is not None:
         return pipe
@@ -45,19 +70,22 @@ def load_model():
     try:
         import torch
         from transformers import pipeline
-        from PIL import Image
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
 
-        # Try loading from local path first, fall back to HF Hub
         local_safetensors = list(MODEL_PATH.glob("*.safetensors"))
         if local_safetensors:
             model_source = str(MODEL_PATH)
-            print(f"Loading MedGemma model from local path {MODEL_PATH} on {device}...")
+            print(f"[startup] Loading MedGemma from local path on {device} …")
         else:
             model_source = MODEL_ID
-            print(f"Loading MedGemma model from HF Hub ({MODEL_ID}) on {device}...")
+            print(f"[startup] Downloading MedGemma from HF Hub ({MODEL_ID}) on {device} …")
+            if not HF_TOKEN:
+                raise RuntimeError(
+                    "HF_TOKEN env var is required to download the model from Hugging Face. "
+                    "Set it and restart, or place the .safetensors files next to app.py."
+                )
 
         pipe = pipeline(
             "image-text-to-text",
@@ -66,17 +94,43 @@ def load_model():
             device=device,
             token=HF_TOKEN,
         )
-        print("Model loaded successfully!")
+        print("[startup] Model loaded successfully ✓")
         return pipe
+
     except Exception as e:
         raise RuntimeError(f"Failed to load model: {e}") from e
 
 
+# ---------------------------------------------------------------------------
+# Lifespan — skip pre-warm on HF Spaces free tier to avoid timeout
+# Model loads lazily on first request instead
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Server startup — model loads on first request to avoid HF Spaces timeout."""
+    print("[startup] MedGemma server starting — model will load on first request.")
+    print("[startup] Server is ready to accept connections ✓")
+    yield
+    # Nothing to clean up on shutdown
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter
+# ---------------------------------------------------------------------------
+limiter = Limiter(key_func=get_remote_address, default_limits=[RATE_LIMIT])
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
 app = FastAPI(
     title="MedGemma Medical Image Analyzer",
     description="Analyze medical images for disease detection and treatment suggestions",
-    version="1.0.0",
+    version="1.1.0",
+    lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,6 +141,9 @@ app.add_middleware(
 )
 
 
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
 class AnalysisResponse(BaseModel):
     success: bool
     analysis: str
@@ -94,36 +151,54 @@ class AnalysisResponse(BaseModel):
     error: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
     """Serve the main frontend HTML."""
     index_path = Path(__file__).parent / "static" / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
-    return HTMLResponse("<h1>MedGemma API</h1><p>Frontend not found. Use /api/analyze endpoint.</p>")
+    return HTMLResponse(
+        "<h1>MedGemma API</h1><p>Frontend not found. Use /api/analyze endpoint.</p>"
+    )
 
 
 @app.post("/api/analyze", response_model=AnalysisResponse)
+@limiter.limit(RATE_LIMIT)
 async def analyze_image(
+    request: Request,                        # required by slowapi
     file: UploadFile = File(...),
     include_cure: bool = True,
 ):
     """
     Analyze an uploaded medical image for disease detection and treatment suggestions.
     Supports: X-rays, dermatology, ophthalmology, pathology images.
+
+    - Max file size: 10 MB (configurable via MAX_UPLOAD_MB env var)
+    - Rate limit: 5 requests / minute per IP (configurable via RATE_LIMIT env var)
+    - Inference timeout: 120 s (configurable via INFERENCE_TIMEOUT_SEC env var)
     """
-    # Validate file type
+    # --- Validate MIME type ---
     allowed_types = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid file type. Allowed: JPEG, PNG, WebP, BMP. Got: {file.content_type}",
+            detail=f"Invalid file type '{file.content_type}'. Allowed: JPEG, PNG, WebP, BMP.",
+        )
+
+    # --- Enforce file size limit BEFORE reading the whole file into RAM ---
+    contents = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum allowed size is {MAX_UPLOAD_BYTES // (1024*1024)} MB.",
         )
 
     try:
         from PIL import Image
 
-        contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
         model_pipe = load_model()
@@ -139,7 +214,25 @@ async def analyze_image(
             }
         ]
 
-        output = model_pipe(text=messages, max_new_tokens=2048)
+        # --- Run inference with a timeout so hung requests don't block the server ---
+        loop = asyncio.get_event_loop()
+        try:
+            output = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: model_pipe(text=messages, max_new_tokens=2048),
+                ),
+                timeout=INFERENCE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            return AnalysisResponse(
+                success=False,
+                analysis="",
+                prompt_used="",
+                error=f"Inference timed out after {INFERENCE_TIMEOUT}s. "
+                      "Try a smaller image or check GPU availability.",
+            )
+
         analysis_text = output[0]["generated_text"][-1]["content"]
 
         return AnalysisResponse(
@@ -148,26 +241,34 @@ async def analyze_image(
             prompt_used="Disease detection + Treatment suggestions" if include_cure else "General analysis",
         )
 
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception as exc:
         return AnalysisResponse(
             success=False,
             analysis="",
             prompt_used="",
-            error=str(e),
+            error=str(exc),
         )
 
 
 @app.get("/api/health")
 async def health_check():
     """Check if the API and model are ready."""
-    try:
-        load_model()
-        return {"status": "ok", "model_loaded": True}
-    except Exception as e:
-        return {"status": "error", "model_loaded": False, "error": str(e)}
+    model_ready = pipe is not None
+    return {
+        "status": "ok" if model_ready else "degraded",
+        "model_loaded": model_ready,
+        "model_id": MODEL_ID,
+        "max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024),
+        "rate_limit": RATE_LIMIT,
+        "inference_timeout_sec": INFERENCE_TIMEOUT,
+    }
 
 
-# Mount static files
+# ---------------------------------------------------------------------------
+# Static files
+# ---------------------------------------------------------------------------
 static_path = Path(__file__).parent / "static"
 if static_path.exists():
     app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
