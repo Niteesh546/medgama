@@ -8,3 +8,4 @@ accelerate>=0.25.0
 torch>=2.0.0
 safetensors>=0.4.0
 slowapi>=0.1.9
+slowapi>=0.1.9
