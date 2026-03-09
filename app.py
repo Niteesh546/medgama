@@ -4,10 +4,10 @@ MedGamma Medical Image Analysis — Powered by Google Gemini 2.0 Flash API
 
 import os
 import base64
-import gradio as gr
+import io
 import google.generativeai as genai
 from PIL import Image
-import io
+import gradio as gr
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
@@ -57,7 +57,6 @@ with gr.Blocks(
     title="MedGamma | Medical Image Analysis",
     theme=gr.themes.Base(primary_hue="cyan", secondary_hue="blue", neutral_hue="slate"),
 ) as demo:
-
     gr.Markdown("# 🩺 MedGamma — Medical Image Analysis")
     gr.Markdown("**AI-Powered Disease Detection & Treatment Suggestions — Powered by Google Gemini 2.0 Flash**")
     gr.HTML("""<div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.4);
@@ -65,7 +64,6 @@ with gr.Blocks(
         <strong>⚠️ Disclaimer:</strong> For informational purposes only.
         Always consult a qualified healthcare professional. Do not rely on this tool for clinical decisions.
     </div>""")
-
     with gr.Row():
         with gr.Column(scale=1):
             image_input = gr.Image(label="📤 Upload Medical Image", type="pil")
@@ -73,13 +71,7 @@ with gr.Blocks(
             analyze_btn = gr.Button("🔬 Analyze Image", variant="primary", size="lg")
         with gr.Column(scale=1):
             output_text = gr.Markdown(value="Upload a medical image and click **🔬 Analyze Image**.")
-
-    analyze_btn.click(
-        fn=analyze_image,
-        inputs=[image_input, include_cure],
-        outputs=[output_text],
-    )
-
+    analyze_btn.click(fn=analyze_image, inputs=[image_input, include_cure], outputs=[output_text])
     gr.Markdown("---\n*Powered by [Google Gemini 2.0 Flash](https://deepmind.google/technologies/gemini/) • Built with ❤️ by Niteesh*")
 
 demo.launch()
