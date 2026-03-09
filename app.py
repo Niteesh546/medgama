@@ -1,6 +1,6 @@
 """
-MedGemma Medical Image Analysis — Powered by Google Gemini 2.0 Flash API
-Fast, free, no GPU needed!
+MedGamma Medical Image Analysis — Powered by Google Gemini 2.0 Flash API
+API key hidden as HF Space secret — users just upload and analyze!
 """
 
 import os
@@ -11,9 +11,11 @@ from PIL import Image
 import io
 
 # ---------------------------------------------------------------------------
-# Config
+# Config — API key from HF Space secret (hidden from users)
 # ---------------------------------------------------------------------------
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 ANALYSIS_PROMPT = """You are an expert medical imaging AI assistant. Analyze this medical image carefully and provide:
 
@@ -22,53 +24,48 @@ ANALYSIS_PROMPT = """You are an expert medical imaging AI assistant. Analyze thi
 3. **Recommended Actions**: Suggest appropriate next steps, potential treatments, or therapies
 4. **Important Note**: Mention if a healthcare professional consultation is advised
 
-Be specific, thorough, and use proper medical terminology. Format your response clearly with each section labeled."""
+Be specific, thorough, and use proper medical terminology."""
 
 CURE_PROMPT = """You are an expert medical imaging AI assistant. Based on your analysis of this medical image, provide:
 
 1. **Identified Conditions**: What disease(s) or condition(s) are present? Include severity if detectable.
-2. **Treatment Recommendations**: What are the suggested treatments or cures for each condition?
-3. **Lifestyle/Preventive Advice**: Any supportive care, lifestyle changes, or preventive measures?
-4. **When to Seek Help**: Urgency level (Emergency/Urgent/Routine) and when to consult a healthcare provider
-5. **Follow-up**: Recommended follow-up tests or imaging
+2. **Treatment Recommendations**: Suggested treatments or cures for each condition.
+3. **Lifestyle/Preventive Advice**: Supportive care, lifestyle changes, or preventive measures.
+4. **When to Seek Help**: Urgency level (Emergency/Urgent/Routine) and when to consult a healthcare provider.
+5. **Follow-up**: Recommended follow-up tests or imaging.
 
-⚠️ Remember: This is for informational purposes only. Always consult a qualified healthcare professional for diagnosis and treatment."""
+⚠️ This is for informational purposes only. Always consult a qualified healthcare professional."""
 
 # ---------------------------------------------------------------------------
 # Analysis function
 # ---------------------------------------------------------------------------
-def analyze_image(image: Image.Image, include_cure: bool, api_key: str) -> str:
+def analyze_image(image: Image.Image, include_cure: bool) -> str:
     if image is None:
         return "⚠️ Please upload a medical image first."
 
-    key = api_key.strip() if api_key.strip() else GEMINI_API_KEY
-    if not key:
-        return "❌ Please provide your Gemini API key. Get one free at https://aistudio.google.com/apikey"
+    if not GEMINI_API_KEY:
+        return "❌ Service not configured. Please contact the administrator."
 
     try:
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
-
-        # Convert PIL image to bytes
         img_byte_arr = io.BytesIO()
         image.save(img_byte_arr, format="PNG")
-        img_byte_arr = img_byte_arr.getvalue()
+        img_bytes = img_byte_arr.getvalue()
 
         prompt = CURE_PROMPT if include_cure else ANALYSIS_PROMPT
 
         response = model.generate_content([
             prompt,
-            {"mime_type": "image/png", "data": base64.b64encode(img_byte_arr).decode()}
+            {"mime_type": "image/png", "data": base64.b64encode(img_bytes).decode()}
         ])
 
         return response.text
 
     except Exception as e:
         error_msg = str(e)
-        if "API_KEY_INVALID" in error_msg or "invalid" in error_msg.lower():
-            return "❌ Invalid API key. Please check your Gemini API key at https://aistudio.google.com/apikey"
-        elif "quota" in error_msg.lower():
-            return "❌ API quota exceeded. Free tier allows 1500 requests/day. Try again tomorrow."
+        if "quota" in error_msg.lower():
+            return "❌ Daily limit reached. Please try again tomorrow."
+        elif "invalid" in error_msg.lower():
+            return "❌ Service configuration error. Please contact the administrator."
         else:
             return f"❌ Error: {error_msg}"
 
@@ -76,7 +73,7 @@ def analyze_image(image: Image.Image, include_cure: bool, api_key: str) -> str:
 # Gradio UI
 # ---------------------------------------------------------------------------
 with gr.Blocks(
-    title="MedGemma | Medical Image Analysis",
+    title="MedGamma | Medical Image Analysis",
     theme=gr.themes.Base(
         primary_hue="cyan",
         secondary_hue="blue",
@@ -98,12 +95,6 @@ with gr.Blocks(
 
     with gr.Row():
         with gr.Column(scale=1):
-            api_key_input = gr.Textbox(
-                label="🔑 Gemini API Key",
-                placeholder="Paste your free Gemini API key here (from aistudio.google.com/apikey)",
-                type="password",
-                info="Get a free API key at https://aistudio.google.com/apikey (1500 free requests/day)"
-            )
             image_input = gr.Image(
                 label="📤 Upload Medical Image",
                 type="pil",
@@ -123,7 +114,7 @@ with gr.Blocks(
 
     analyze_btn.click(
         fn=analyze_image,
-        inputs=[image_input, include_cure, api_key_input],
+        inputs=[image_input, include_cure],
         outputs=output_text,
         show_progress=True,
     )
@@ -137,12 +128,6 @@ with gr.Blocks(
     - **Pathology** — histopathology slides, biopsy images
     - **MRI / CT scans** — brain, spine, abdomen
     - **General medical imaging** — JPEG, PNG, WebP, BMP
-
-    ### 🆓 Free API Setup
-    1. Go to 👉 [Google AI Studio](https://aistudio.google.com/apikey)
-    2. Sign in with Google → Click **Create API key**
-    3. Paste it in the **API Key** field above
-    4. **Free tier**: 1500 requests/day, no credit card needed!
 
     *Powered by [Google Gemini 2.0 Flash](https://deepmind.google/technologies/gemini/) • Built with ❤️ by Niteesh*
     """)
