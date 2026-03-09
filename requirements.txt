@@ -1,8 +1,8 @@
 gradio>=5.9.1
-spaces
 transformers>=4.50.0
 accelerate>=0.25.0
 torch>=2.0.0
 safetensors>=0.4.0
 huggingface-hub>=0.20.0
 pillow>=10.0.0
+spaces

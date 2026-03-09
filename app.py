@@ -3,11 +3,11 @@ MedGemma Medical Image Analysis — Gradio UI for HF Spaces ZeroGPU (Free GPU)
 """
 
 import os
-import spaces
 import gradio as gr
 import torch
 from transformers import pipeline
 from PIL import Image
+import spaces
 
 MODEL_ID = "google/medgemma-1.5-4b-it"
 HF_TOKEN = os.environ.get("HF_TOKEN")
@@ -74,7 +74,7 @@ with gr.Blocks(
     gr.Markdown("# 🩺 MedGemma Medical Image Analysis")
     gr.Markdown("**AI-Powered Disease Detection & Treatment Suggestions using Google MedGemma 1.5**")
     gr.HTML("""<div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.4);
-        border-radius:12px;padding:1rem;color:#b45309;font-size:0.9rem;margin-bottom:1rem;">
+        border-radius:12px;padding:1rem;color:#fbbf24;font-size:0.9rem;margin-bottom:1rem;">
         <strong>⚠️ Disclaimer:</strong> For informational purposes only. Always consult a qualified
         healthcare professional. Do not rely on this tool for clinical decisions.</div>""")
 
