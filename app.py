@@ -1,5 +1,6 @@
 """
 MedGamma Medical Image Analysis — Powered by Google Gemini 2.0 Flash API
+Docker deployment on HF Spaces
 """
 
 import os
@@ -74,4 +75,4 @@ with gr.Blocks(
     analyze_btn.click(fn=analyze_image, inputs=[image_input, include_cure], outputs=[output_text])
     gr.Markdown("---\n*Powered by [Google Gemini 2.0 Flash](https://deepmind.google/technologies/gemini/) • Built with ❤️ by Niteesh*")
 
-demo.launch()
+demo.launch(server_name="0.0.0.0", server_port=7860)
