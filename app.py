@@ -1,94 +1,151 @@
 """
-MedGemma Medical Image Analysis — Gradio UI for HF Spaces ZeroGPU (Free GPU)
+MedGemma Medical Image Analysis — Powered by Google Gemini 2.0 Flash API
+Fast, free, no GPU needed!
 """
 
 import os
+import base64
 import gradio as gr
-import torch
-from transformers import pipeline
+import google.generativeai as genai
 from PIL import Image
-import spaces
+import io
 
-MODEL_ID = "google/medgemma-1.5-4b-it"
-HF_TOKEN = os.environ.get("HF_TOKEN")
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-ANALYSIS_PROMPT = """Analyze this medical image carefully. Please provide:
-1. **Observations**: Describe what you see in the image (anatomy, abnormalities, notable findings)
-2. **Potential Conditions**: List any diseases, conditions, or abnormalities you detect
+ANALYSIS_PROMPT = """You are an expert medical imaging AI assistant. Analyze this medical image carefully and provide:
+
+1. **Observations**: Describe what you see in the image (anatomy, structures, abnormalities, notable findings)
+2. **Potential Conditions**: List any diseases, conditions, or abnormalities you detect with confidence levels
 3. **Recommended Actions**: Suggest appropriate next steps, potential treatments, or therapies
 4. **Important Note**: Mention if a healthcare professional consultation is advised
 
-Be specific and thorough. Format your response clearly with each section labeled."""
+Be specific, thorough, and use proper medical terminology. Format your response clearly with each section labeled."""
 
-CURE_PROMPT = """Based on your analysis of this medical image, provide:
-1. **Identified Conditions**: What disease(s) or condition(s) are present?
+CURE_PROMPT = """You are an expert medical imaging AI assistant. Based on your analysis of this medical image, provide:
+
+1. **Identified Conditions**: What disease(s) or condition(s) are present? Include severity if detectable.
 2. **Treatment Recommendations**: What are the suggested treatments or cures for each condition?
-3. **Lifestyle/Preventive Advice**: Any supportive care or preventive measures?
-4. **When to Seek Help**: Urgency level and when to consult a healthcare provider
+3. **Lifestyle/Preventive Advice**: Any supportive care, lifestyle changes, or preventive measures?
+4. **When to Seek Help**: Urgency level (Emergency/Urgent/Routine) and when to consult a healthcare provider
+5. **Follow-up**: Recommended follow-up tests or imaging
 
-Remember: This is for informational purposes only. Always consult a qualified healthcare professional."""
+⚠️ Remember: This is for informational purposes only. Always consult a qualified healthcare professional for diagnosis and treatment."""
 
-pipe = None
-
-def load_model():
-    global pipe
-    if pipe is not None:
-        return pipe
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    pipe = pipeline(
-        "image-text-to-text",
-        model=MODEL_ID,
-        torch_dtype=dtype,
-        device=device,
-        token=HF_TOKEN,
-    )
-    return pipe
-
-@spaces.GPU
-def analyze_image(image, include_cure):
+# ---------------------------------------------------------------------------
+# Analysis function
+# ---------------------------------------------------------------------------
+def analyze_image(image: Image.Image, include_cure: bool, api_key: str) -> str:
     if image is None:
         return "⚠️ Please upload a medical image first."
-    try:
-        model_pipe = load_model()
-        prompt = CURE_PROMPT if include_cure else ANALYSIS_PROMPT
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image},
-                    {"type": "text", "text": prompt},
-                ],
-            }
-        ]
-        output = model_pipe(text=messages, max_new_tokens=2048)
-        return output[0]["generated_text"][-1]["content"]
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
 
+    key = api_key.strip() if api_key.strip() else GEMINI_API_KEY
+    if not key:
+        return "❌ Please provide your Gemini API key. Get one free at https://aistudio.google.com/apikey"
+
+    try:
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+
+        # Convert PIL image to bytes
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format="PNG")
+        img_byte_arr = img_byte_arr.getvalue()
+
+        prompt = CURE_PROMPT if include_cure else ANALYSIS_PROMPT
+
+        response = model.generate_content([
+            prompt,
+            {"mime_type": "image/png", "data": base64.b64encode(img_byte_arr).decode()}
+        ])
+
+        return response.text
+
+    except Exception as e:
+        error_msg = str(e)
+        if "API_KEY_INVALID" in error_msg or "invalid" in error_msg.lower():
+            return "❌ Invalid API key. Please check your Gemini API key at https://aistudio.google.com/apikey"
+        elif "quota" in error_msg.lower():
+            return "❌ API quota exceeded. Free tier allows 1500 requests/day. Try again tomorrow."
+        else:
+            return f"❌ Error: {error_msg}"
+
+# ---------------------------------------------------------------------------
+# Gradio UI
+# ---------------------------------------------------------------------------
 with gr.Blocks(
     title="MedGemma | Medical Image Analysis",
-    theme=gr.themes.Base(primary_hue="cyan", secondary_hue="blue", neutral_hue="slate"),
+    theme=gr.themes.Base(
+        primary_hue="cyan",
+        secondary_hue="blue",
+        neutral_hue="slate",
+    ),
 ) as demo:
 
-    gr.Markdown("# 🩺 MedGemma Medical Image Analysis")
-    gr.Markdown("**AI-Powered Disease Detection & Treatment Suggestions using Google MedGemma 1.5**")
-    gr.HTML("""<div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.4);
+    gr.Markdown("# 🩺 MedGamma — Medical Image Analysis")
+    gr.Markdown("**AI-Powered Disease Detection & Treatment Suggestions — Powered by Google Gemini 2.0 Flash**")
+
+    gr.HTML("""
+    <div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.4);
         border-radius:12px;padding:1rem;color:#fbbf24;font-size:0.9rem;margin-bottom:1rem;">
-        <strong>⚠️ Disclaimer:</strong> For informational purposes only. Always consult a qualified
-        healthcare professional. Do not rely on this tool for clinical decisions.</div>""")
+        <strong>⚠️ Disclaimer:</strong> This tool is for informational purposes only.
+        Always consult a qualified healthcare professional for diagnosis, treatment, and medical advice.
+        Do not rely on this tool for clinical decisions.
+    </div>
+    """)
 
     with gr.Row():
         with gr.Column(scale=1):
-            image_input = gr.Image(label="📤 Upload Medical Image", type="pil", sources=["upload", "clipboard"])
-            include_cure = gr.Checkbox(label="Include disease detection & treatment suggestions", value=True)
+            api_key_input = gr.Textbox(
+                label="🔑 Gemini API Key",
+                placeholder="Paste your free Gemini API key here (from aistudio.google.com/apikey)",
+                type="password",
+                info="Get a free API key at https://aistudio.google.com/apikey (1500 free requests/day)"
+            )
+            image_input = gr.Image(
+                label="📤 Upload Medical Image",
+                type="pil",
+                sources=["upload", "clipboard"],
+            )
+            include_cure = gr.Checkbox(
+                label="Include disease detection & treatment suggestions",
+                value=True,
+            )
             analyze_btn = gr.Button("🔬 Analyze Image", variant="primary", size="lg")
+
         with gr.Column(scale=1):
-            output_text = gr.Markdown(value="Upload a medical image and click **Analyze Image**.")
+            output_text = gr.Markdown(
+                value="Upload a medical image and click **🔬 Analyze Image** to get AI-powered analysis.",
+                label="📋 Analysis Results",
+            )
 
-    analyze_btn.click(fn=analyze_image, inputs=[image_input, include_cure], outputs=output_text, show_progress=True)
+    analyze_btn.click(
+        fn=analyze_image,
+        inputs=[image_input, include_cure, api_key_input],
+        outputs=output_text,
+        show_progress=True,
+    )
 
-    gr.Markdown("---\n*Powered by [MedGemma 1.5 4B](https://huggingface.co/google/medgemma-1.5-4b-it) by Google*")
+    gr.Markdown("""
+    ---
+    ### 📋 Supported Image Types
+    - **Chest X-rays** — pneumonia, cardiomegaly, pleural effusion, fractures
+    - **Dermatology** — skin lesions, rashes, melanoma detection
+    - **Ophthalmology** — fundus images, diabetic retinopathy
+    - **Pathology** — histopathology slides, biopsy images
+    - **MRI / CT scans** — brain, spine, abdomen
+    - **General medical imaging** — JPEG, PNG, WebP, BMP
+
+    ### 🆓 Free API Setup
+    1. Go to 👉 [Google AI Studio](https://aistudio.google.com/apikey)
+    2. Sign in with Google → Click **Create API key**
+    3. Paste it in the **API Key** field above
+    4. **Free tier**: 1500 requests/day, no credit card needed!
+
+    *Powered by [Google Gemini 2.0 Flash](https://deepmind.google/technologies/gemini/) • Built with ❤️ by Niteesh*
+    """)
 
 if __name__ == "__main__":
     demo.launch()
