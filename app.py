@@ -1,78 +1,112 @@
 """
-MedGamma Medical Image Analysis — Powered by Google Gemini 2.0 Flash API
-Docker deployment on HF Spaces
+MedGamma Medical Image Analysis — FastAPI + Gemini API
+Multi-turn agent with conversation history
 """
 
 import os
 import base64
 import io
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
 import google.generativeai as genai
 from PIL import Image
-import gradio as gr
+import uvicorn
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-ANALYSIS_PROMPT = """You are an expert medical imaging AI assistant. Analyze this medical image carefully and provide:
+SYSTEM_PROMPT = """You are MedGamma, an expert AI medical imaging assistant trained to analyze medical images and provide detailed clinical insights.
 
-1. **Observations**: Describe what you see in the image (anatomy, structures, abnormalities, notable findings)
-2. **Potential Conditions**: List any diseases, conditions, or abnormalities you detect with confidence levels
-3. **Recommended Actions**: Suggest appropriate next steps, potential treatments, or therapies
-4. **Important Note**: Mention if a healthcare professional consultation is advised
+You can analyze:
+- Chest X-rays (pneumonia, cardiomegaly, pleural effusion, fractures)
+- Dermatology images (skin lesions, rashes, melanoma)
+- Ophthalmology images (fundus, diabetic retinopathy)
+- Pathology slides (histopathology, biopsy)
+- MRI and CT scans (brain, spine, abdomen)
 
-Be specific, thorough, and use proper medical terminology."""
+When analyzing images, provide structured reports with observations, potential conditions, treatment recommendations, urgency level, and follow-up suggestions.
+You remember conversation context and answer follow-up questions about the same image.
+Always remind users this is for informational purposes only and to consult a healthcare professional."""
 
-CURE_PROMPT = """You are an expert medical imaging AI assistant. Based on your analysis of this medical image, provide:
+app = FastAPI(title="MedGamma")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-1. **Identified Conditions**: What disease(s) or condition(s) are present? Include severity if detectable.
-2. **Treatment Recommendations**: Suggested treatments or cures for each condition.
-3. **Lifestyle/Preventive Advice**: Supportive care, lifestyle changes, or preventive measures.
-4. **When to Seek Help**: Urgency level (Emergency/Urgent/Routine) and when to consult a healthcare provider.
-5. **Follow-up**: Recommended follow-up tests or imaging.
+class Message(BaseModel):
+    role: str
+    content: str
 
-⚠️ This is for informational purposes only. Always consult a qualified healthcare professional."""
+class ChatRequest(BaseModel):
+    message: str
+    history: List[Message] = []
+    image_data: Optional[str] = None
 
-def analyze_image(image, include_cure):
-    if image is None:
-        return "⚠️ Please upload a medical image first."
+class ChatResponse(BaseModel):
+    success: bool
+    response: str = ""
+    error: Optional[str] = None
+
+def get_html():
+    html_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    if os.path.exists(html_path):
+        with open(html_path) as f:
+            return f.read()
+    return "<h1>MedGamma</h1>"
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return get_html()
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
     if not GEMINI_API_KEY:
-        return "❌ Service not configured. Please contact the administrator."
+        return ChatResponse(success=False, error="Service not configured.")
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format="PNG")
-        img_bytes = img_byte_arr.getvalue()
-        prompt = CURE_PROMPT if include_cure else ANALYSIS_PROMPT
-        response = model.generate_content([
-            prompt,
-            {"mime_type": "image/png", "data": base64.b64encode(img_bytes).decode()}
-        ])
-        return response.text
+        model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
+        history = []
+        for msg in request.history:
+            history.append({"role": msg.role, "parts": [msg.content]})
+        chat_session = model.start_chat(history=history)
+        content = []
+        if request.image_data:
+            img_bytes = base64.b64decode(request.image_data)
+            content.append({"mime_type": "image/png", "data": base64.b64encode(img_bytes).decode()})
+        content.append(request.message)
+        response = chat_session.send_message(content)
+        return ChatResponse(success=True, response=response.text)
     except Exception as e:
         error_msg = str(e)
         if "quota" in error_msg.lower():
-            return "❌ Daily limit reached. Please try again tomorrow."
-        return f"❌ Error: {error_msg}"
+            return ChatResponse(success=False, error="Daily API limit reached. Try again tomorrow.")
+        return ChatResponse(success=False, error=f"Error: {error_msg}")
 
-with gr.Blocks(
-    title="MedGamma | Medical Image Analysis",
-    theme=gr.themes.Base(primary_hue="cyan", secondary_hue="blue", neutral_hue="slate"),
-) as demo:
-    gr.Markdown("# 🩺 MedGamma — Medical Image Analysis")
-    gr.Markdown("**AI-Powered Disease Detection & Treatment Suggestions — Powered by Google Gemini 2.0 Flash**")
-    gr.HTML("""<div style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.4);
-        border-radius:12px;padding:1rem;color:#fbbf24;font-size:0.9rem;margin-bottom:1rem;">
-        <strong>⚠️ Disclaimer:</strong> For informational purposes only.
-        Always consult a qualified healthcare professional. Do not rely on this tool for clinical decisions.
-    </div>""")
-    with gr.Row():
-        with gr.Column(scale=1):
-            image_input = gr.Image(label="📤 Upload Medical Image", type="pil")
-            include_cure = gr.Checkbox(label="Include disease detection & treatment suggestions", value=True)
-            analyze_btn = gr.Button("🔬 Analyze Image", variant="primary", size="lg")
-        with gr.Column(scale=1):
-            output_text = gr.Markdown(value="Upload a medical image and click **🔬 Analyze Image**.")
-    analyze_btn.click(fn=analyze_image, inputs=[image_input, include_cure], outputs=[output_text])
-    gr.Markdown("---\n*Powered by [Google Gemini 2.0 Flash](https://deepmind.google/technologies/gemini/) • Built with ❤️ by Niteesh*")
+@app.post("/analyze")
+async def analyze(file: UploadFile = File(...), include_cure: bool = True):
+    if not GEMINI_API_KEY:
+        raise HTTPException(500, "Service not configured.")
+    try:
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents)).convert("RGB")
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format="PNG")
+        img_bytes = img_byte_arr.getvalue()
+        img_b64 = base64.b64encode(img_bytes).decode()
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=SYSTEM_PROMPT)
+        prompt = "Please analyze this medical image and provide a comprehensive report including: observations, potential conditions with confidence levels, treatment recommendations, urgency level (Emergency/Urgent/Routine), and follow-up suggestions." if include_cure else "Please analyze this medical image and describe your observations and potential findings."
+        response = model.generate_content([
+            prompt,
+            {"mime_type": "image/png", "data": img_b64}
+        ])
+        return {"success": True, "analysis": response.text, "image_b64": img_b64}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
-demo.launch(server_name="0.0.0.0", server_port=7860)
+@app.get("/health")
+async def health():
+    return {"status": "ok", "model": "gemini-2.0-flash"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=7860)

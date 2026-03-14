@@ -7,14 +7,15 @@ sdk: docker
 pinned: false
 ---
 
-# 🩺 MedGamma — Medical Image Analysis
+# 🩺 MedGamma — AI Medical Imaging Agent
 
-AI-powered medical image analysis powered by **Google Gemini 2.0 Flash**.
+AI-powered medical image analysis with multi-turn conversation, powered by **Google Gemini 2.0 Flash**.
 
 ## Features
 - 🔬 Disease Detection from medical images
-- 💊 Treatment Suggestions
-- 🏥 Supports X-rays, dermatology, ophthalmology, pathology, MRI, CT
+- 💬 Multi-turn conversation — ask follow-up questions
+- 💊 Treatment Suggestions & Urgency Classification
+- 🏥 Supports X-rays, MRI, CT, Dermatology, Pathology
 - ⚡ Results in 2-5 seconds
 
 ## Disclaimer
